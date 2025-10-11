@@ -31,6 +31,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import me.reply.app.ui.theme.SmartReplyTheme
 import me.reply.app.uis.MainViewModel
 import dagger.hilt.android.AndroidEntryPoint
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -39,12 +40,9 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log
 import androidx.core.content.ContextCompat
-import me.reply.app.ui.theme.SmartReplyTheme
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
-    // ✅ 1. DEFINE THE LAUNCHER
-    // This handles the result of the permission request.
     private val requestPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted: Boolean ->
             if (isGranted) {
@@ -54,15 +52,12 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-    // ✅ 2. DEFINE THE FUNCTION
-    // This function checks if permission is needed and then calls the launcher.
     private fun askNotificationPermission() {
-        // This is only necessary for API level 33 and above.
+        // This is only necessary for Android version 13 or above
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
                 PackageManager.PERMISSION_GRANTED
             ) {
-                // Directly ask for the permission.
                 requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
         }
@@ -74,13 +69,49 @@ class MainActivity : ComponentActivity() {
         askNotificationPermission()
         setContent {
             SmartReplyTheme {
-                MainAppScreen()
+                AppNavigator()
             }
         }
     }
 }
 
 
+@Composable
+fun AppNavigator() {
+    val navController = rememberNavController()
+    val context = LocalContext.current
+
+    val startDestination = if (isNotificationServiceEnabled(context)) "main" else "permission"
+
+    NavHost(navController = navController, startDestination = startDestination) {
+        // The Permission Screen
+        composable("permission") {
+            PermissionScreen(
+                onGrantPermissionClick = { openNotificationSettings(context) }
+            )
+        }
+
+        // The Main App Screen (list of contacts)
+        composable("main") {
+            MainAppScreen(
+                onContactClick = { contactName ->
+                    navController.navigate("chat/$contactName")
+                }
+            )
+        }
+
+        // The Chat History Screen
+        composable("chat/{contactName}") { backStackEntry ->
+            val contactName = backStackEntry.arguments?.getString("contactName") ?: "Unknown"
+            ChatHistoryScreen(
+                contactName = contactName,
+                onNavigateBack = {
+                    navController.popBackStack()
+                }
+            )
+        }
+    }
+}
 
 private fun isNotificationServiceEnabled(context: Context): Boolean {
     val enabledListeners = NotificationManagerCompat.getEnabledListenerPackages(context)
@@ -111,9 +142,6 @@ fun PermissionScreen(onGrantPermissionClick: () -> Unit) {
     }
 }
 
-/**
- * The MainAppScreen, which displays the list of imported contacts.
- */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MainAppScreen(
@@ -121,18 +149,23 @@ fun MainAppScreen(
     onContactClick: (String) -> Unit
 ) {
     val context = LocalContext.current
-    // We listen to the live stream of contact names from the ViewModel.
     val contacts by viewModel.contacts.collectAsState()
 
-    // This is the "light switch" for our delete confirmation dialog.
     var contactToDelete by remember { mutableStateOf<String?>(null) }
 
-    // This is the "boomerang" for the file picker.
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenMultipleDocuments(),
         onResult = { uris: List<Uri> ->
             if (uris.isNotEmpty()) {
-                Toast.makeText(context, "files are imported successfully...", Toast.LENGTH_SHORT).show()
+                val uriMap = mutableMapOf<Uri, String>()
+                uris.forEach { uri ->
+                    val fileName = getFileName(context, uri)
+                    if (fileName != null) {
+                        uriMap[uri] = fileName
+                    }
+                }
+                viewModel.processAndIndexFiles(uriMap, context)
+                Toast.makeText(context, "Import started in background...", Toast.LENGTH_SHORT).show()
             }
         }
     )
@@ -160,6 +193,7 @@ fun MainAppScreen(
         Text(text = "Imported Chats", style = MaterialTheme.typography.headlineSmall)
         Spacer(modifier = Modifier.height(16.dp))
 
+        // The scrollable list that displays the contact names.
         LazyColumn(modifier = Modifier.weight(1f)) {
             items(contacts) { contactName ->
                 Box(
@@ -184,9 +218,7 @@ fun MainAppScreen(
     }
 }
 
-/**
- * The new screen for displaying a single contact's chat history.
- */
+// The new screen for displaying a single contact's chat history
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatHistoryScreen(
@@ -194,21 +226,16 @@ fun ChatHistoryScreen(
     viewModel: MainViewModel = hiltViewModel(),
     onNavigateBack: () -> Unit
 ) {
-    // This runs once when the screen is first created. It tells the ViewModel
-    // to load the chat history for this specific contact.
+
     LaunchedEffect(key1 = contactName) {
         viewModel.loadChatHistory(contactName)
     }
-
-    // This runs when the user leaves the screen. It tells the ViewModel to clear
-    // the chat history data to save memory.
     DisposableEffect(key1 = Unit) {
         onDispose {
             viewModel.clearChatHistory()
         }
     }
 
-    // We listen to the new 'selectedChatHistory' stream from the ViewModel.
     val chatHistory by viewModel.selectedChatHistory.collectAsState()
 
     Scaffold(
@@ -251,10 +278,6 @@ fun ChatHistoryScreen(
     }
 }
 
-
-/**
- * The composable function for our confirmation dialog.
- */
 @Composable
 private fun DeleteConfirmationDialog(
     contactName: String,
