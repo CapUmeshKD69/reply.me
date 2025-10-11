@@ -1,4 +1,4 @@
-package com.example.smartreply.ai
+package me.reply.app.ai
 
 import android.util.Log
 import kotlinx.serialization.*
