@@ -1,28 +1,249 @@
 package me.reply.app
 
+import android.annotation.SuppressLint
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.provider.OpenableColumns
+import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
-import me.reply.app.ui.theme.ReplyMeTheme
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.core.app.NotificationManagerCompat
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import me.reply.app.uis.MainViewModel
+import dagger.hilt.android.AndroidEntryPoint
+import androidx.activity.compose.rememberLauncherForActivityResult
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import android.util.Log
+import androidx.core.content.ContextCompat
+import me.reply.app.ui.theme.SmartReplyTheme
 
+@AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+    // ✅ 1. DEFINE THE LAUNCHER
+    // This handles the result of the permission request.
+    private val requestPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted: Boolean ->
+            if (isGranted) {
+                Log.d("MainActivity", "Notification permission granted.")
+            } else {
+                Log.d("MainActivity", "Notification permission denied.")
+            }
+        }
+
+    // ✅ 2. DEFINE THE FUNCTION
+    // This function checks if permission is needed and then calls the launcher.
+    private fun askNotificationPermission() {
+        // This is only necessary for API level 33 and above.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+                PackageManager.PERMISSION_GRANTED
+            ) {
+                // Directly ask for the permission.
+                requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+    }
+
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        askNotificationPermission()
         setContent {
-            ReplyMeTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    Greeting(
-                        name = "Android",
-                        modifier = Modifier.padding(innerPadding)
+            SmartReplyTheme {
+                MainAppScreen()
+            }
+        }
+    }
+}
+
+
+
+private fun isNotificationServiceEnabled(context: Context): Boolean {
+    val enabledListeners = NotificationManagerCompat.getEnabledListenerPackages(context)
+    return enabledListeners.any { it == context.packageName }
+}
+
+private fun openNotificationSettings(context: Context) {
+    val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+    context.startActivity(intent)
+}
+
+@Composable
+fun PermissionScreen(onGrantPermissionClick: () -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(16.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = "To provide smart suggestions, this app needs permission to read your notifications.",
+            textAlign = TextAlign.Center,
+            style = MaterialTheme.typography.titleMedium
+        )
+        Spacer(modifier = Modifier.height(24.dp))
+        Button(onClick = onGrantPermissionClick) {
+            Text(text = "Grant Permission")
+        }
+    }
+}
+
+/**
+ * The MainAppScreen, which displays the list of imported contacts.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun MainAppScreen(
+    viewModel: MainViewModel = hiltViewModel(),
+    onContactClick: (String) -> Unit
+) {
+    val context = LocalContext.current
+    // We listen to the live stream of contact names from the ViewModel.
+    val contacts by viewModel.contacts.collectAsState()
+
+    // This is the "light switch" for our delete confirmation dialog.
+    var contactToDelete by remember { mutableStateOf<String?>(null) }
+
+    // This is the "boomerang" for the file picker.
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenMultipleDocuments(),
+        onResult = { uris: List<Uri> ->
+            if (uris.isNotEmpty()) {
+                Toast.makeText(context, "files are imported successfully...", Toast.LENGTH_SHORT).show()
+            }
+        }
+    )
+
+    if (contactToDelete != null) {
+        DeleteConfirmationDialog(
+            contactName = contactToDelete!!,
+            onConfirm = {
+                viewModel.deleteContact(contactToDelete!!)
+                contactToDelete = null
+            },
+            onDismiss = {
+                contactToDelete = null
+            }
+        )
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(text = "Imported Chats", style = MaterialTheme.typography.headlineSmall)
+        Spacer(modifier = Modifier.height(16.dp))
+
+        LazyColumn(modifier = Modifier.weight(1f)) {
+            items(contacts) { contactName ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .combinedClickable(
+                            onClick = { onContactClick(contactName) },
+                            onLongClick = { contactToDelete = contactName }
+                        )
+                        .padding(vertical = 12.dp)
+                ) {
+                    Text(text = contactName)
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Button(onClick = { filePickerLauncher.launch(arrayOf("text/plain", "application/txt")) }) {
+            Text(text = "Import New Chat(s)")
+        }
+    }
+}
+
+/**
+ * The new screen for displaying a single contact's chat history.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ChatHistoryScreen(
+    contactName: String,
+    viewModel: MainViewModel = hiltViewModel(),
+    onNavigateBack: () -> Unit
+) {
+    // This runs once when the screen is first created. It tells the ViewModel
+    // to load the chat history for this specific contact.
+    LaunchedEffect(key1 = contactName) {
+        viewModel.loadChatHistory(contactName)
+    }
+
+    // This runs when the user leaves the screen. It tells the ViewModel to clear
+    // the chat history data to save memory.
+    DisposableEffect(key1 = Unit) {
+        onDispose {
+            viewModel.clearChatHistory()
+        }
+    }
+
+    // We listen to the new 'selectedChatHistory' stream from the ViewModel.
+    val chatHistory by viewModel.selectedChatHistory.collectAsState()
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(contactName) },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                    }
+                }
+            )
+        }
+    ) { paddingValues ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(horizontal = 16.dp)
+        ) {
+            items(chatHistory) { message ->
+                val alignment = if (message.isSentByMe) Alignment.CenterEnd else Alignment.CenterStart
+                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = alignment) {
+                    Text(
+                        text = message.messageText,
+                        modifier = Modifier
+                            .padding(vertical = 4.dp)
+                            .background(
+                                color = if (message.isSentByMe) MaterialTheme.colorScheme.primaryContainer
+                                else MaterialTheme.colorScheme.secondaryContainer,
+                                shape = MaterialTheme.shapes.medium
+                            )
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        color = if (message.isSentByMe) MaterialTheme.colorScheme.onPrimaryContainer
+                        else MaterialTheme.colorScheme.onSecondaryContainer
                     )
                 }
             }
@@ -30,18 +251,52 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+
+/**
+ * The composable function for our confirmation dialog.
+ */
 @Composable
-fun Greeting(name: String, modifier: Modifier = Modifier) {
-    Text(
-        text = "Hello $name!",
-        modifier = modifier
+private fun DeleteConfirmationDialog(
+    contactName: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = "Delete Chat History") },
+        text = { Text(text = "Are you sure you want to delete all messages for '$contactName'? This action cannot be undone.") },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text("Delete")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
     )
 }
 
-@Preview(showBackground = true)
-@Composable
-fun GreetingPreview() {
-    ReplyMeTheme {
-        Greeting("Android")
+@SuppressLint("Range")
+private fun getFileName(context: Context, uri: Uri): String? {
+    var result: String? = null
+    if (uri.scheme == "content") {
+        val cursor = context.contentResolver.query(uri, null, null, null, null)
+        try {
+            if (cursor != null && cursor.moveToFirst()) {
+                result = cursor.getString(cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME))
+            }
+        } finally {
+            cursor?.close()
+        }
     }
+    if (result == null) {
+        result = uri.path
+        val cut = result?.lastIndexOf('/')
+        if (cut != -1) {
+            result = result?.substring(cut!! + 1)
+        }
+    }
+    return result
 }
