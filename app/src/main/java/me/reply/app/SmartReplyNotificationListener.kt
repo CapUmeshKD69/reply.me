@@ -1,5 +1,4 @@
 package me.reply.app
-
 import android.content.Context
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
@@ -19,10 +18,8 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import javax.inject.Inject
-
 @AndroidEntryPoint
 class SmartReplyNotificationListener : NotificationListenerService() {
-
     @Inject
     lateinit var repository: MessageRepository
 
