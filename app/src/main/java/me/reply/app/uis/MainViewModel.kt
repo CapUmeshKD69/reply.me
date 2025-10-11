@@ -1,4 +1,4 @@
-package com.example.smartreply.uis
+package me.reply.app.uis
 
 import android.content.Context
 import android.net.Uri
