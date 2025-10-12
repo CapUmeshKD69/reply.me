@@ -48,11 +48,9 @@ class MainViewModel @Inject constructor(
             _selectedChatHistory.value = repository.getAllMessagesForContact(contactName)
         }
     }
-
     fun clearChatHistory() {
         _selectedChatHistory.value = emptyList()
     }
-
     fun processAndIndexFiles(uriMap: Map<Uri, String>, context: Context) {
         viewModelScope.launch(Dispatchers.IO) {
 
@@ -95,8 +93,6 @@ class MainViewModel @Inject constructor(
                         } else {
                             filteredMessages
                         }
-
-
                         val contactName = extractContactName(fileName)
 
                         val ourUserName =
@@ -128,7 +124,6 @@ class MainViewModel @Inject constructor(
             Log.d("ViewModel", "Finished processing all files.")
         }
     }
-
     private fun detectUserNameFromParsedMessages(
         messages: List<AiMessage>,
         contactName: String
@@ -143,9 +138,7 @@ class MainViewModel @Inject constructor(
                     !it.contains("System", ignoreCase = true) &&
                     !it.contains("Group", ignoreCase = true)
         }
-
         if (potentialUsers.isEmpty()) return "Me"
-
         return potentialUsers.maxByOrNull { it.value }?.key ?: "Me"
     }
 
@@ -161,10 +154,8 @@ class MainViewModel @Inject constructor(
 
         chunks.forEachIndexed { index, messageChunk ->
             _indexingProgress.value = (index + 1) to chunks.size
-
             val textsToEmbed = messageChunk.map { it.messageText }
             val embeddingsMap = getEmbeddingsInBatch(textsToEmbed, apiKey)
-
             if (embeddingsMap != null) {
                 val updatedMessages = messageChunk.mapNotNull { message ->
                     embeddingsMap[message.messageText]?.let { vector ->
@@ -187,9 +178,7 @@ class MainViewModel @Inject constructor(
 
     private suspend fun trySingleEmbeddingFallback(messages: List<Message>, apiKey: String) {
         Log.d("ViewModel", "  -> Trying single embedding fallback for ${messages.size} messages...")
-
         val updatedMessages = mutableListOf<Message>()
-
         messages.forEach { message ->
             val embedding = getEmbedding(message.messageText, apiKey)
             if (embedding != null) {
@@ -198,7 +187,6 @@ class MainViewModel @Inject constructor(
             // Small delay to avoid rate limiting
             kotlinx.coroutines.delay(200)
         }
-
         if (updatedMessages.isNotEmpty()) {
             repository.updateMessages(updatedMessages)
             Log.d("ViewModel", "✅ Single embedding fallback saved ${updatedMessages.size} messages")

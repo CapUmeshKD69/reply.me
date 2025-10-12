@@ -1,5 +1,4 @@
 package me.reply.app
-
 import android.content.Context
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
@@ -20,26 +19,19 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import javax.inject.Inject
-
 @AndroidEntryPoint
 class SmartReplyNotificationListener : NotificationListenerService() {
-
     @Inject
     lateinit var repository: MessageRepository
-
     @Inject
     lateinit var notificationHelper: NotificationHelper
     @Inject
     lateinit var userSettings: UserSettingsRepository
     private var lastProcessedKey: String? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-
-
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         super.onNotificationPosted(sbn)
-
         if (sbn == null || sbn.packageName != "com.whatsapp") return
-
         val extras = sbn.notification.extras
         val title = extras.getString("android.title") ?: ""
         val text = extras.getString("android.text") ?: ""
@@ -63,8 +55,6 @@ class SmartReplyNotificationListener : NotificationListenerService() {
             Log.d("NotificationListener", "Ignoring system message: '$text'")
             return
         }
-
-
         serviceScope.launch {
             val isImported = repository.isContactImported(title)
             if (isImported) {
@@ -75,7 +65,6 @@ class SmartReplyNotificationListener : NotificationListenerService() {
             }
         }
     }
-
     private suspend fun handleNewNotification(contactName: String, newMessageText: String, originalNotification: android.app.Notification) {
         try {
             Log.d("AI_ENGINE", "Attempting to get embedding for text: '$newMessageText'")
@@ -90,7 +79,6 @@ class SmartReplyNotificationListener : NotificationListenerService() {
                 showFallbackNotification(contactName, newMessageText, originalNotification)
                 return
             }
-
             val ourUserName = detectOurUserName(contactName, historyFromDb)
             Log.d("AI_ENGINE", "Using user identity: '$ourUserName' for contact: '$contactName'")
 
@@ -100,19 +88,13 @@ class SmartReplyNotificationListener : NotificationListenerService() {
                 showFallbackNotification(contactName, newMessageText, originalNotification)
                 return
             }
-
             val newMessage = Message(
                 contactName = contactName,
                 messageText = newMessageText,
                 isSentByMe = false, // It's from them
                 embeddingJson = Json.encodeToString(embeddingVector)
             )
-
-
-
             Log.d("NotificationListener", "New message from $contactName saved to database.")
-
-
             val history = repository.getAllMessagesForContact(contactName)
             val insertedMessages = repository.insertAndGetMessages(listOf(newMessage))
             if (insertedMessages.isEmpty()) {
@@ -127,7 +109,6 @@ class SmartReplyNotificationListener : NotificationListenerService() {
                     content = dbMsg.messageText
                 )
             }
-
             val indexedHistoryForAI = history.associate { dbMsg ->
                 val vector = try {
                     Json.decodeFromString<List<Float>>(dbMsg.embeddingJson)
@@ -135,13 +116,11 @@ class SmartReplyNotificationListener : NotificationListenerService() {
                     emptyList()
                 }
                 val aiMessageKey = AiMessage(
-
                     sender = if (dbMsg.isSentByMe) ourUserName else contactName,
                     content = dbMsg.messageText
                 )
                 aiMessageKey to vector
             }
-
             val newAiMessage = AiMessage(
                 sender = contactName,
                 content = newMessageText
@@ -152,9 +131,7 @@ class SmartReplyNotificationListener : NotificationListenerService() {
                 indexedHistory = indexedHistoryForAI,
                 ourUser = ourUserName
             )
-
             Log.d("AI_ENGINE", "Generated Replies: $smartReplies")
-
             notificationHelper.showSmartReplyNotification(
                 contactName = contactName,
                 messageText = newMessageText,
@@ -167,14 +144,11 @@ class SmartReplyNotificationListener : NotificationListenerService() {
             showFallbackNotification(contactName, newMessageText, originalNotification)
         }
     }
-
     private suspend fun detectOurUserName(contactName: String, history: List<Message>): String {
-
         val storedUserName = getUserNameFromStorage(contactName)
         if (storedUserName != "Me") {
             return storedUserName
         }
-
         val myMessages = history.filter { it.isSentByMe }
         if (myMessages.isNotEmpty()) {
             val potentialNames = mutableSetOf<String>()
@@ -204,13 +178,10 @@ class SmartReplyNotificationListener : NotificationListenerService() {
 
         return "Me"
     }
-
-
     private fun storeUserName(contactName: String, userName: String) {
         val prefs = getSharedPreferences("user_mapping", Context.MODE_PRIVATE)
         prefs.edit().putString(contactName, userName).apply()
     }
-
     private fun getUserNameFromStorage(contactName: String): String {
         return try {
             val prefs = getSharedPreferences("user_mapping", Context.MODE_PRIVATE)
@@ -219,7 +190,6 @@ class SmartReplyNotificationListener : NotificationListenerService() {
             "Me"
         }
     }
-
     private suspend fun showFallbackNotification(contactName: String, messageText: String, originalNotification: android.app.Notification) {
         val fallbackReplies = listOf("Okay 👍", "Sounds good!", "Let me check")
         val historyFromDb = repository.getAllMessagesForContact(contactName)
@@ -232,7 +202,6 @@ class SmartReplyNotificationListener : NotificationListenerService() {
             ourUserName = ourUserName
         )
     }
-
     override fun onDestroy() {
         super.onDestroy()
         serviceScope.cancel()

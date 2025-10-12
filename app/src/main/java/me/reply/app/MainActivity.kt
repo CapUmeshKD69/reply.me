@@ -1,5 +1,4 @@
 package me.reply.app
-
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
@@ -48,13 +47,10 @@ import me.reply.app.uis.MainViewModel
 import me.reply.app.uis.SettingsViewModel
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
-
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
-
     @Inject
     lateinit var userSettings: UserSettingsRepository
-
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted: Boolean ->
@@ -64,7 +60,6 @@ class MainActivity : ComponentActivity() {
             Log.d("MainActivity", "Notification permission denied.")
         }
     }
-
     private fun askNotificationPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
@@ -74,7 +69,6 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         askNotificationPermission()
@@ -86,8 +80,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
-
-
 @Composable
 fun AppNavigator(userSettings: UserSettingsRepository) {
     val navController = rememberNavController()
@@ -138,12 +130,10 @@ private fun isNotificationServiceEnabled(context: Context): Boolean {
     val enabledListeners = NotificationManagerCompat.getEnabledListenerPackages(context)
     return enabledListeners.any { it == context.packageName }
 }
-
 private fun openNotificationSettings(context: Context) {
     val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
     context.startActivity(intent)
 }
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
@@ -320,7 +310,6 @@ fun ChatHistoryScreen(
         }
     }
 }
-
 @Composable
 private fun DeleteConfirmationDialog(
     contactName: String,

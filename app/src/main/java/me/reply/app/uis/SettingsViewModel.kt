@@ -11,8 +11,6 @@ import javax.inject.Inject
 class SettingsViewModel @Inject constructor(
     private val userSettings: UserSettingsRepository
 ) : ViewModel() {
-
-
     fun saveApiKey(apiKey: String) {
         viewModelScope.launch {
             userSettings.saveApiKey(apiKey)

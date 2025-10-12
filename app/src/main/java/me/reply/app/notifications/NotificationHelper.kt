@@ -14,8 +14,6 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import android.content.Intent
 import com.example.smartreply.R
-
-
 @Singleton
 class NotificationHelper @Inject constructor(
     @ApplicationContext private val context: Context
@@ -171,7 +169,6 @@ class NotificationHelper @Inject constructor(
 
         return foundAction
     }
-
     private fun createReplyAction(
         replyText: String,
         whatsAppReplyAction: Notification.Action,
@@ -192,7 +189,7 @@ class NotificationHelper @Inject constructor(
             )
             putExtra(SmartReplyReceiver.EXTRA_REMOTE_INPUT_KEY, originalRemoteInput.resultKey)
 
-            // THIS IS THE KEY CHANGE: Pass the reply text as a simple extra
+
             putExtra("key_reply_text", replyText)
             putExtra("key_contact_name", contactName)
             putExtra("key_user_name", ourUserName)

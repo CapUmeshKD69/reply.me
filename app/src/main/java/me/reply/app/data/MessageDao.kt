@@ -6,24 +6,18 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
-
-
-
 @Dao
 interface MessageDao {
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertAndGetIds(messages: List<Message>): List<Long>
-
     @Update
     suspend fun updateMessages(messages: List<Message>)
-
     @Query("SELECT * FROM messages WHERE id IN (:ids)")
     suspend fun getMessagesByIds(ids: List<Long>): List<Message>
 
     @Query("SELECT DISTINCT contact_name FROM messages ORDER BY contact_name ASC")
     fun getImportedContacts(): Flow<List<String>>
-
     @Query("SELECT * FROM messages WHERE contact_name = :contactName")
     suspend fun getAllMessagesForContact(contactName: String): List<Message>
 

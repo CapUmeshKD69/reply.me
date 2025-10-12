@@ -11,11 +11,8 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import kotlin.math.sqrt
-
-
 private const val GOOGLE_API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 private const val CHAT_MODEL = "gemini-2.5-pro"
-
 @Inject
 lateinit var userSettings: UserSettingsRepository
 val apiKey = userSettings.getApiKey()
@@ -88,7 +85,6 @@ fun getEmbeddingsInBatch(texts: List<String>, apiKey: String): Map<String, List<
     val batchRequest = BatchEmbeddingRequest(requests = requests)
     val requestBodyJson = jsonParser.encodeToString(batchRequest)
 
-
     Log.d("AI_ENGINE", "  -> Sending ${requests.size} requests to embedding API")
 
     val request = Request.Builder().url(url).post(requestBodyJson.toRequestBody("application/json".toMediaType())).build()
@@ -128,37 +124,28 @@ fun getEmbedding(text: String, apiKey: String): List<Float>? {
         Log.e("AI_ENGINE", "❌ getEmbedding: Text is blank")
         return null
     }
-
     val sanitizedText = sanitizeTextForEmbedding(text)
     if (sanitizedText.isBlank()) {
         Log.e("AI_ENGINE", "❌ getEmbedding: Text became blank after sanitization")
         return null
     }
-
     val client = OkHttpClient.Builder()
         .readTimeout(60, TimeUnit.SECONDS)
         .connectTimeout(60, TimeUnit.SECONDS)
         .build()
-
     val jsonParser = Json { ignoreUnknownKeys = true }
     val url = "$GOOGLE_API_BASE_URL/models/text-embedding-004:embedContent?key=$apiKey"
-
     Log.d("AI_ENGINE", "  -> Single embedding request for: '${sanitizedText.take(50)}...'")
-
-
     val requestObject = EmbeddingRequest(
         model = "models/text-embedding-004",
         content = Content(parts = listOf(Part(text = sanitizedText)))
     )
     val requestBodyJson = jsonParser.encodeToString(requestObject)
-
     Log.d("AI_ENGINE", "  -> Request JSON: $requestBodyJson")
-
     val request = Request.Builder()
         .url(url)
         .post(requestBodyJson.toRequestBody("application/json".toMediaType()))
         .build()
-
     try {
         val response = client.newCall(request).execute()
         val responseBodyString = response.body?.string()
@@ -177,7 +164,6 @@ fun getEmbedding(text: String, apiKey: String): List<Float>? {
     }
     return null
 }
-
 fun generateSmartReplies(
     newMessage: AiMessage,
     history: List<AiMessage>,
@@ -196,7 +182,6 @@ fun generateSmartReplies(
     if (newMessageVector != null) {
         Log.d("AI_ENGINE", "🧠 Performing semantic search against ${indexedHistory.size} indexed messages...")
         val bestMatch = findMostSimilarMessage(newMessageVector, indexedHistory)
-
         if (bestMatch != null && bestMatch.second > similarityThreshold) {
             Log.d("AI_ENGINE", "✅ Cache HIT! Found similar message with score: ${"%.2f".format(bestMatch.second)}")
 
@@ -205,7 +190,6 @@ fun generateSmartReplies(
                 it.sender == bestMatch.first.sender &&
                         it.content == bestMatch.first.content
             }
-
             if (foundIndex != -1) {
                 val contextWindow = history.subList(maxOf(0, foundIndex - 10), minOf(history.size, foundIndex + 11))
                 val recentHistory = history.takeLast(50)
@@ -225,11 +209,9 @@ fun generateSmartReplies(
         val recentHistory = history.takeLast(80)
         finalPrompt = createPrompt("miss", emptyList(), recentHistory, newMessage, ourUser)
     }
-
     Log.d("AI_ENGINE", "📝 Final prompt selected. Sending to Gemini for reply generation...")
     return getAiChatResponse(finalPrompt)
 }
-
 fun findMostSimilarMessage(newMessageVector: List<Float>, indexedHistory: Map<AiMessage, List<Float>>): Pair<AiMessage, Float>? {
     var bestMatch: AiMessage? = null
     var highestSimilarity = -1.0f
@@ -285,15 +267,11 @@ private fun getAiChatResponse(prompt: String): List<String> {
         .readTimeout(60, TimeUnit.SECONDS)
         .connectTimeout(60, TimeUnit.SECONDS)
         .build()
-
     val jsonParser = Json { ignoreUnknownKeys = true }
     val url = "$GOOGLE_API_BASE_URL/models/$CHAT_MODEL:generateContent?key=$apiKey"
-
     val requestObject = GeminiRequest(contents = listOf(Content(parts = listOf(Part(text = prompt)))))
     val requestBodyJson = jsonParser.encodeToString(requestObject)
-
     Log.d("AI_ENGINE", "--- PROMPT SENT TO GEMINI ---\n$prompt\n---------------------------")
-
     val request = Request.Builder().url(url).post(requestBodyJson.toRequestBody("application/json".toMediaType())).build()
     try {
         val response = client.newCall(request).execute()
@@ -302,14 +280,11 @@ private fun getAiChatResponse(prompt: String): List<String> {
             val candidates = jsonParser.decodeFromString<GeminiResponse>(responseBodyString).candidates
             if (candidates.isNotEmpty() && candidates.first().content.parts.isNotEmpty()) {
                 var aiText = candidates.first().content.parts.first().text ?: ""
-
-
-                if (aiText.contains("json")) {
+               if (aiText.contains("json")) {
                     aiText = aiText.substringAfter("json\n").substringBeforeLast("\n")
                 } else if (aiText.contains("")) {
                     aiText = aiText.substringAfter("").substringBeforeLast("")
                 }
-
                 return try {
                     jsonParser.decodeFromString<List<String>>(aiText.trim())
                 } catch (e: Exception) {
@@ -341,7 +316,6 @@ private fun extractRepliesManually(text: String): List<String> {
 
     return if (replies.size >= 2) replies.take(3) else listOf("Okay 👍", "Sounds good!", "Let me check")
 }
-
 private fun formatHistoryForPrompt(messages: List<AiMessage>, ourUser: String): String {
     return messages.joinToString("\n") { msg ->
         val prefix = if (msg.sender.equals(ourUser, ignoreCase = true)) "Me:" else "Them:"
