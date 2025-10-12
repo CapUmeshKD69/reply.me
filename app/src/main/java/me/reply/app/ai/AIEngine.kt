@@ -15,8 +15,7 @@ private const val GOOGLE_API_BASE_URL = "https://generativelanguage.googleapis.c
 private const val CHAT_MODEL = "gemini-2.5-pro"
 
 
-private const val EMBEDDING_API_KEY = "AIzaSyCQGVMv6Zw4jbpvV60VhTsv0tc1aZ6DbU0"
-private const val CHAT_API_KEY = "AIzaSyCQGVMv6Zw4jbpvV60VhTsv0tc1aZ6DbU0"
+private const val CHAT_API_KEY = "AIzaSyDbxuVj3O3bHeFi7eXaGVeKVHfsXiU8YpQ"
 
 fun parseChatFile(fileContent: String): List<AiMessage> {
     val messages = mutableListOf<AiMessage>()

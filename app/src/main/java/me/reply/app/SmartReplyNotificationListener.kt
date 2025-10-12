@@ -112,7 +112,7 @@ class SmartReplyNotificationListener : NotificationListenerService() {
 
             Log.d("NotificationListener", "New message from $contactName saved to database.")
 
-            // --- Step B: Run the AI Engine to Get Replies ---
+
             val history = repository.getAllMessagesForContact(contactName)
             val insertedMessages = repository.insertAndGetMessages(listOf(newMessage))
             if (insertedMessages.isEmpty()) {
@@ -122,7 +122,7 @@ class SmartReplyNotificationListener : NotificationListenerService() {
             }
             val historyForAI = history.map { dbMsg ->
                 AiMessage(
-                    // 🔧 FIXED: Use detected user name for "Me", contactName for "Them"
+
                     sender = if (dbMsg.isSentByMe) ourUserName else contactName,
                     content = dbMsg.messageText
                 )
@@ -135,7 +135,7 @@ class SmartReplyNotificationListener : NotificationListenerService() {
                     emptyList()
                 }
                 val aiMessageKey = AiMessage(
-                    // 🔧 FIXED: Same logic here
+
                     sender = if (dbMsg.isSentByMe) ourUserName else contactName,
                     content = dbMsg.messageText
                 )
@@ -146,8 +146,6 @@ class SmartReplyNotificationListener : NotificationListenerService() {
                 sender = contactName,
                 content = newMessageText
             )
-
-            // 🔧 FIXED: Use dual API keys like your production code
             val smartReplies = generateSmartReplies(
                 newMessage = newAiMessage,
                 history = historyForAI,
@@ -171,7 +169,7 @@ class SmartReplyNotificationListener : NotificationListenerService() {
     }
 
     private suspend fun detectOurUserName(contactName: String, history: List<Message>): String {
-        // Strategy 1: Try to get from stored user mapping first
+
         val storedUserName = getUserNameFromStorage(contactName)
         if (storedUserName != "Me") {
             return storedUserName
@@ -184,7 +182,7 @@ class SmartReplyNotificationListener : NotificationListenerService() {
             myMessages.forEach { message ->
                 val namePatterns = listOf(
                     Regex("""(?:I am|I'm|my name is|this is)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)""", RegexOption.IGNORE_CASE),
-                    Regex("""-\s*([A-Z][a-z]+)\s*:""") // Name followed by colon pattern
+                    Regex("""-\s*([A-Z][a-z]+)\s*:""")
                 )
 
                 namePatterns.forEach { pattern ->

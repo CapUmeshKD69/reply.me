@@ -55,7 +55,7 @@ class MainViewModel @Inject constructor(
 
     fun processAndIndexFiles(uriMap: Map<Uri, String>, context: Context) {
         viewModelScope.launch(Dispatchers.IO) {
-            val embeddingApiKey = "AIzaSyCQGVMv6Zw4jbpvV60VhTsv0tc1aZ6DbU0"
+
             val apiKey = userSettings.getApiKey()
             if (apiKey == null) {
                 Log.e("ViewModel", "API Key is missing. Cannot start indexing.")
@@ -156,8 +156,8 @@ class MainViewModel @Inject constructor(
 
     private suspend fun runIndexingProcess(messagesToIndex: List<Message>, apiKey: String) {
         Log.d("ViewModel", "Starting indexing process for ${messagesToIndex.size} messages...")
-        val embeddingApiKey = "AIzaSyDZo1RCOH-V7Nh_NDW-5qkdiBkDq6IRTsA"
-        val chunks = messagesToIndex.chunked(50)
+
+        val chunks = messagesToIndex.chunked(80)
 
         chunks.forEachIndexed { index, messageChunk ->
             _indexingProgress.value = (index + 1) to chunks.size
