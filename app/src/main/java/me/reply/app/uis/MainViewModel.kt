@@ -11,6 +11,7 @@ import me.reply.app.ai.getEmbeddingsInBatch
 import me.reply.app.ai.parseChatFile
 import me.reply.app.data.Message
 import me.reply.app.data.MessageRepository
+import me.reply.app.data.UserSettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,7 +26,8 @@ import javax.inject.Inject
 
 @HiltViewModel
 class MainViewModel @Inject constructor(
-    private val repository: MessageRepository
+    private val repository: MessageRepository,
+    private val userSettings: UserSettingsRepository
 ) : ViewModel() {
 
     val contacts: StateFlow<List<String>> = repository.getImportedContacts()
@@ -54,7 +56,11 @@ class MainViewModel @Inject constructor(
     fun processAndIndexFiles(uriMap: Map<Uri, String>, context: Context) {
         viewModelScope.launch(Dispatchers.IO) {
             val embeddingApiKey = "AIzaSyCQGVMv6Zw4jbpvV60VhTsv0tc1aZ6DbU0"
-
+            val apiKey = userSettings.getApiKey()
+            if (apiKey == null) {
+                Log.e("ViewModel", "API Key is missing. Cannot start indexing.")
+                return@launch
+            }
             uriMap.forEach { (uri, fileName) ->
                 try {
                     val fileContent = context.contentResolver.openInputStream(uri)
@@ -68,7 +74,6 @@ class MainViewModel @Inject constructor(
                             "This message was deleted",
                             "You deleted this message",
                             ""
-                            // Add any other specific phrases you want to ignore here
                         )
                         val filteredMessages = parsedAiMessages.filterNot {
                             it.content in ignoredMessages
@@ -82,7 +87,10 @@ class MainViewModel @Inject constructor(
                         val messageLimit = 2000
 
                         val finalMessages = if (filteredMessages.size > messageLimit) {
-                            Log.d("ViewModel", "Chat file is large (${filteredMessages.size} messages). Taking the latest $messageLimit.")
+                            Log.d(
+                                "ViewModel",
+                                "Chat file is large (${filteredMessages.size} messages). Taking the latest $messageLimit."
+                            )
                             filteredMessages.takeLast(messageLimit)
                         } else {
                             filteredMessages
@@ -91,7 +99,8 @@ class MainViewModel @Inject constructor(
 
                         val contactName = extractContactName(fileName)
 
-                        val ourUserName = detectUserNameFromParsedMessages(finalMessages, contactName)
+                        val ourUserName =
+                            detectUserNameFromParsedMessages(finalMessages, contactName)
                         storeUserMapping(context, contactName, ourUserName)
 
                         val messagesToSave = finalMessages.map { aiMsg ->
@@ -104,9 +113,12 @@ class MainViewModel @Inject constructor(
                         }
 
                         val savedMessages = repository.insertAndGetMessages(messagesToSave)
-                        Log.d("ViewModel", "Parsed and saved ${savedMessages.size} messages for $contactName (User: $ourUserName)")
+                        Log.d(
+                            "ViewModel",
+                            "Parsed and saved ${savedMessages.size} messages for $contactName (User: $ourUserName)"
+                        )
 
-                        runIndexingProcess(savedMessages, embeddingApiKey)
+                        runIndexingProcess(savedMessages, apiKey)
                     }
                 } catch (e: Exception) {
                     Log.e("ViewModel", "Error processing file $fileName: ${e.message}")
@@ -117,7 +129,10 @@ class MainViewModel @Inject constructor(
         }
     }
 
-    private fun detectUserNameFromParsedMessages(messages: List<AiMessage>, contactName: String): String {
+    private fun detectUserNameFromParsedMessages(
+        messages: List<AiMessage>,
+        contactName: String
+    ): String {
         if (messages.isEmpty()) return "Me"
 
         val senderStats = messages.groupingBy { it.sender }.eachCount()
@@ -141,14 +156,14 @@ class MainViewModel @Inject constructor(
 
     private suspend fun runIndexingProcess(messagesToIndex: List<Message>, apiKey: String) {
         Log.d("ViewModel", "Starting indexing process for ${messagesToIndex.size} messages...")
-        val embeddingApiKey = "AIzaSyCQGVMv6Zw4jbpvV60VhTsv0tc1aZ6DbU0"
+        val embeddingApiKey = "AIzaSyDZo1RCOH-V7Nh_NDW-5qkdiBkDq6IRTsA"
         val chunks = messagesToIndex.chunked(50)
 
         chunks.forEachIndexed { index, messageChunk ->
             _indexingProgress.value = (index + 1) to chunks.size
 
             val textsToEmbed = messageChunk.map { it.messageText }
-            val embeddingsMap = getEmbeddingsInBatch(textsToEmbed,embeddingApiKey)
+            val embeddingsMap = getEmbeddingsInBatch(textsToEmbed, apiKey)
 
             if (embeddingsMap != null) {
                 val updatedMessages = messageChunk.mapNotNull { message ->
@@ -158,7 +173,10 @@ class MainViewModel @Inject constructor(
                 }
                 if (updatedMessages.isNotEmpty()) {
                     repository.updateMessages(updatedMessages)
-                    Log.d("ViewModel", "Indexed chunk ${index + 1}/${chunks.size} (${updatedMessages.size} messages)")
+                    Log.d(
+                        "ViewModel",
+                        "Indexed chunk ${index + 1}/${chunks.size} (${updatedMessages.size} messages)"
+                    )
                 }
             } else {
                 Log.e("ViewModel", "Failed to get embeddings for chunk ${index + 1}")
@@ -166,6 +184,7 @@ class MainViewModel @Inject constructor(
             }
         }
     }
+
     private suspend fun trySingleEmbeddingFallback(messages: List<Message>, apiKey: String) {
         Log.d("ViewModel", "  -> Trying single embedding fallback for ${messages.size} messages...")
 

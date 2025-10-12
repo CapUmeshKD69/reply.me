@@ -1,4 +1,5 @@
 package me.reply.app
+
 import android.content.Context
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
@@ -8,6 +9,7 @@ import me.reply.app.ai.generateSmartReplies
 import me.reply.app.ai.getEmbedding
 import me.reply.app.data.Message
 import me.reply.app.data.MessageRepository
+import me.reply.app.data.UserSettingsRepository
 import me.reply.app.notifications.NotificationHelper
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
@@ -18,18 +20,20 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import javax.inject.Inject
+
 @AndroidEntryPoint
 class SmartReplyNotificationListener : NotificationListenerService() {
+
     @Inject
     lateinit var repository: MessageRepository
 
     @Inject
     lateinit var notificationHelper: NotificationHelper
+    @Inject
+    lateinit var userSettings: UserSettingsRepository
     private var lastProcessedKey: String? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    private val embeddingApiKey = "AIzaSyCQGVMv6Zw4jbpvV60VhTsv0tc1aZ6DbU0"  // For embedding calls
-    private val chatApiKey = "AIzaSyCQGVMv6Zw4jbpvV60VhTsv0tc1aZ6DbU0"           // For Gemini chat calls
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         super.onNotificationPosted(sbn)
@@ -39,7 +43,6 @@ class SmartReplyNotificationListener : NotificationListenerService() {
         val extras = sbn.notification.extras
         val title = extras.getString("android.title") ?: ""
         val text = extras.getString("android.text") ?: ""
-
         Log.d("NotificationListener", "DEBUG: Received raw text = '[$text]'")
         val currentKey = "$title|$text"
         if (currentKey == lastProcessedKey) {
@@ -47,7 +50,6 @@ class SmartReplyNotificationListener : NotificationListenerService() {
             return
         }
         lastProcessedKey = currentKey
-
         if (text.isBlank() || title.isBlank()) return
         val ignoredPhrases = listOf(
             "new messages",
@@ -78,19 +80,21 @@ class SmartReplyNotificationListener : NotificationListenerService() {
         try {
             Log.d("AI_ENGINE", "Attempting to get embedding for text: '$newMessageText'")
             val historyFromDb = repository.getAllMessagesForContact(contactName)
-
+            val apiKey = userSettings.getApiKey()
+            if (apiKey == null) {
+                Log.e("AI_ENGINE", "API Key is missing. Cannot generate replies.")
+                return
+            }
             if (historyFromDb.isEmpty()) {
                 Log.w("AI_ENGINE", "No chat history found for $contactName. Cannot generate replies.")
                 showFallbackNotification(contactName, newMessageText, originalNotification)
                 return
             }
 
-
             val ourUserName = detectOurUserName(contactName, historyFromDb)
             Log.d("AI_ENGINE", "Using user identity: '$ourUserName' for contact: '$contactName'")
 
-
-            val embeddingVector = getEmbedding(newMessageText,embeddingApiKey)
+            val embeddingVector = getEmbedding(newMessageText,apiKey)
             if (embeddingVector == null) {
                 Log.e("AI_ENGINE", "Could not get embedding for new message.")
                 showFallbackNotification(contactName, newMessageText, originalNotification)
@@ -108,7 +112,7 @@ class SmartReplyNotificationListener : NotificationListenerService() {
 
             Log.d("NotificationListener", "New message from $contactName saved to database.")
 
-
+            // --- Step B: Run the AI Engine to Get Replies ---
             val history = repository.getAllMessagesForContact(contactName)
             val insertedMessages = repository.insertAndGetMessages(listOf(newMessage))
             if (insertedMessages.isEmpty()) {
@@ -116,15 +120,13 @@ class SmartReplyNotificationListener : NotificationListenerService() {
                 showFallbackNotification(contactName, newMessageText, originalNotification)
                 return
             }
-
             val historyForAI = history.map { dbMsg ->
                 AiMessage(
-
+                    // 🔧 FIXED: Use detected user name for "Me", contactName for "Them"
                     sender = if (dbMsg.isSentByMe) ourUserName else contactName,
                     content = dbMsg.messageText
                 )
             }
-
 
             val indexedHistoryForAI = history.associate { dbMsg ->
                 val vector = try {
@@ -133,7 +135,7 @@ class SmartReplyNotificationListener : NotificationListenerService() {
                     emptyList()
                 }
                 val aiMessageKey = AiMessage(
-
+                    // 🔧 FIXED: Same logic here
                     sender = if (dbMsg.isSentByMe) ourUserName else contactName,
                     content = dbMsg.messageText
                 )
@@ -162,16 +164,12 @@ class SmartReplyNotificationListener : NotificationListenerService() {
                 originalNotification = originalNotification,
                 ourUserName = ourUserName
             )
-
         } catch (e: Exception) {
             Log.e("NotificationListener", "Error in handleNewNotification", e)
             showFallbackNotification(contactName, newMessageText, originalNotification)
         }
     }
 
-    /**
-     * 🔧 FIXED: Detect our user name without accessing non-existent 'sender' field
-     */
     private suspend fun detectOurUserName(contactName: String, history: List<Message>): String {
         // Strategy 1: Try to get from stored user mapping first
         val storedUserName = getUserNameFromStorage(contactName)
@@ -179,14 +177,11 @@ class SmartReplyNotificationListener : NotificationListenerService() {
             return storedUserName
         }
 
-        // Strategy 2: Look for patterns in message content to detect user name
         val myMessages = history.filter { it.isSentByMe }
         if (myMessages.isNotEmpty()) {
-            // Look for messages where the user might have identified themselves
             val potentialNames = mutableSetOf<String>()
 
             myMessages.forEach { message ->
-                // Patterns like "I am X", "My name is X", "This is X"
                 val namePatterns = listOf(
                     Regex("""(?:I am|I'm|my name is|this is)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)""", RegexOption.IGNORE_CASE),
                     Regex("""-\s*([A-Z][a-z]+)\s*:""") // Name followed by colon pattern
@@ -209,13 +204,10 @@ class SmartReplyNotificationListener : NotificationListenerService() {
             }
         }
 
-        // Strategy 3: Fallback - use contact-specific default
         return "Me"
     }
 
-    /**
-     * Store and retrieve user name from SharedPreferences
-     */
+
     private fun storeUserName(contactName: String, userName: String) {
         val prefs = getSharedPreferences("user_mapping", Context.MODE_PRIVATE)
         prefs.edit().putString(contactName, userName).apply()
