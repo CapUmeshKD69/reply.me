@@ -6,16 +6,15 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.os.Build
-import android.os.Bundle
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.Person
-import androidx.core.app.RemoteInput
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 import android.content.Intent
-import me.reply.app.R
+import com.example.smartreply.R
+
 
 @Singleton
 class NotificationHelper @Inject constructor(

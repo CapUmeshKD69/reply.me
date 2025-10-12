@@ -8,7 +8,7 @@ data class AiMessage(
     val content: String
 )
 
-// --- Gemini API Models ---
+
 @Serializable
 data class Part(val text: String)
 

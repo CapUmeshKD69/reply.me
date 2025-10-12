@@ -1,12 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
-
-    <!-- Permissions remain the same, they are correct -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- THE FIX #1: The android:name now points to the correct Application class path -->
     <application
         android:name="me.reply.app.SmartReplyApplication"
         android:allowBackup="true"
@@ -19,7 +16,6 @@
         android:theme="@style/Theme.ReplyMe"
         tools:targetApi="31">
 
-        <!-- THE FIX #2: Using the full path for all components is safer and clearer -->
         <receiver
             android:name="me.reply.app.notifications.SmartReplyReceiver"
             android:enabled="true"

@@ -2,7 +2,6 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.ksp)
-    // The kotlin.compose plugin is intentionally removed
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.hilt)
 }
@@ -10,7 +9,6 @@ plugins {
 android {
     namespace = "com.example.smartreply"
     compileSdk = 34
-
     defaultConfig {
         applicationId = "com.example.smartreply"
         minSdk = 26
@@ -20,7 +18,6 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
-
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -37,13 +34,11 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
-
-    // This is the older, direct method to enable Jetpack Compose
     buildFeatures {
         compose = true
     }
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.8" // This version is compatible with Kotlin 1.9.22
+        kotlinCompilerExtensionVersion = "1.5.8"
     }
 
     packaging {
@@ -52,7 +47,6 @@ android {
         }
     }
 }
-
 dependencies {
     implementation(libs.okhttp)
     implementation(libs.androidx.core.ktx)
@@ -63,26 +57,17 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
-    implementation(libs.androidx.navigation.compose) // ADD THIS LINE
+    implementation(libs.androidx.navigation.compose)
 
-
-    // Room
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
     ksp(libs.room.compiler)
 
-    // ViewModel
     implementation(libs.androidx.lifecycle.viewmodel.compose)
-
-    // Hilt
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
     implementation(libs.hilt.navigation.compose)
-
-    // Serialization
     implementation(libs.kotlinx.serialization.json)
-
-    // Test dependencies
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

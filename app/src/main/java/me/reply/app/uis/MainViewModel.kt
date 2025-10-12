@@ -53,7 +53,7 @@ class MainViewModel @Inject constructor(
 
     fun processAndIndexFiles(uriMap: Map<Uri, String>, context: Context) {
         viewModelScope.launch(Dispatchers.IO) {
-            val embeddingApiKey = "AIzaSyDZo1RCOH-V7Nh_NDW-5qkdiBkDq6IRTsA"
+            val embeddingApiKey = "AIzaSyCQGVMv6Zw4jbpvV60VhTsv0tc1aZ6DbU0"
 
             uriMap.forEach { (uri, fileName) ->
                 try {
@@ -141,7 +141,7 @@ class MainViewModel @Inject constructor(
 
     private suspend fun runIndexingProcess(messagesToIndex: List<Message>, apiKey: String) {
         Log.d("ViewModel", "Starting indexing process for ${messagesToIndex.size} messages...")
-        val embeddingApiKey = "AIzaSyDZo1RCOH-V7Nh_NDW-5qkdiBkDq6IRTsA"
+        val embeddingApiKey = "AIzaSyCQGVMv6Zw4jbpvV60VhTsv0tc1aZ6DbU0"
         val chunks = messagesToIndex.chunked(50)
 
         chunks.forEachIndexed { index, messageChunk ->

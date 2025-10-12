@@ -28,8 +28,8 @@ class SmartReplyNotificationListener : NotificationListenerService() {
     private var lastProcessedKey: String? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    private val embeddingApiKey = "AIzaSyCLIBLy8G6dEPN6dppIC7XL-EckyYq2oWk"  // For embedding calls
-    private val chatApiKey = "AIzaSyDZo1RCOH-V7Nh_NDW-5qkdiBkDq6IRTsA"           // For Gemini chat calls
+    private val embeddingApiKey = "AIzaSyCQGVMv6Zw4jbpvV60VhTsv0tc1aZ6DbU0"  // For embedding calls
+    private val chatApiKey = "AIzaSyCQGVMv6Zw4jbpvV60VhTsv0tc1aZ6DbU0"           // For Gemini chat calls
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         super.onNotificationPosted(sbn)
