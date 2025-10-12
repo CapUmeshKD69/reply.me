@@ -3,19 +3,22 @@ package me.reply.app.ai
 import android.util.Log
 import kotlinx.serialization.*
 import kotlinx.serialization.json.*
+import me.reply.app.data.UserSettingsRepository
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.TimeUnit
+import javax.inject.Inject
 import kotlin.math.sqrt
 
 
 private const val GOOGLE_API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 private const val CHAT_MODEL = "gemini-2.5-pro"
 
-
-private const val CHAT_API_KEY = "AIzaSyDbxuVj3O3bHeFi7eXaGVeKVHfsXiU8YpQ"
+@Inject
+lateinit var userSettings: UserSettingsRepository
+val apiKey = userSettings.getApiKey()
 
 fun parseChatFile(fileContent: String): List<AiMessage> {
     val messages = mutableListOf<AiMessage>()
@@ -185,7 +188,10 @@ fun generateSmartReplies(
     var finalPrompt: String
 
     Log.d("AI_ENGINE", "🧠 Getting embedding for new message...")
-    val newMessageVector = getEmbedding(newMessage.content,CHAT_API_KEY)
+    if (apiKey == null) {
+        return listOf("Error: API Key is missing")
+    }
+    val newMessageVector = getEmbedding(newMessage.content,apiKey)
 
     if (newMessageVector != null) {
         Log.d("AI_ENGINE", "🧠 Performing semantic search against ${indexedHistory.size} indexed messages...")
@@ -281,7 +287,7 @@ private fun getAiChatResponse(prompt: String): List<String> {
         .build()
 
     val jsonParser = Json { ignoreUnknownKeys = true }
-    val url = "$GOOGLE_API_BASE_URL/models/$CHAT_MODEL:generateContent?key=$CHAT_API_KEY"
+    val url = "$GOOGLE_API_BASE_URL/models/$CHAT_MODEL:generateContent?key=$apiKey"
 
     val requestObject = GeminiRequest(contents = listOf(Content(parts = listOf(Part(text = prompt)))))
     val requestBodyJson = jsonParser.encodeToString(requestObject)
