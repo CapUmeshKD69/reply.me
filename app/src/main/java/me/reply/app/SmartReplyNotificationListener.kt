@@ -129,6 +129,7 @@ class SmartReplyNotificationListener : NotificationListenerService() {
                 newMessage = newAiMessage,
                 history = historyForAI,
                 indexedHistory = indexedHistoryForAI,
+                apiKey = apiKey,
                 ourUser = ourUserName
             )
             Log.d("AI_ENGINE", "Generated Replies: $smartReplies")

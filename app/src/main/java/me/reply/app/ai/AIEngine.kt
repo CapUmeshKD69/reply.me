@@ -13,9 +13,6 @@ import javax.inject.Inject
 import kotlin.math.sqrt
 private const val GOOGLE_API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 private const val CHAT_MODEL = "gemini-2.5-pro"
-@Inject
-lateinit var userSettings: UserSettingsRepository
-val apiKey = userSettings.getApiKey()
 
 fun parseChatFile(fileContent: String): List<AiMessage> {
     val messages = mutableListOf<AiMessage>()
@@ -168,15 +165,14 @@ fun generateSmartReplies(
     newMessage: AiMessage,
     history: List<AiMessage>,
     indexedHistory: Map<AiMessage, List<Float>>,
+    apiKey: String,
     ourUser: String
 ): List<String> {
     val similarityThreshold = 0.75f
     var finalPrompt: String
 
     Log.d("AI_ENGINE", "🧠 Getting embedding for new message...")
-    if (apiKey == null) {
-        return listOf("Error: API Key is missing")
-    }
+
     val newMessageVector = getEmbedding(newMessage.content,apiKey)
 
     if (newMessageVector != null) {
@@ -210,7 +206,7 @@ fun generateSmartReplies(
         finalPrompt = createPrompt("miss", emptyList(), recentHistory, newMessage, ourUser)
     }
     Log.d("AI_ENGINE", "📝 Final prompt selected. Sending to Gemini for reply generation...")
-    return getAiChatResponse(finalPrompt)
+    return getAiChatResponse(finalPrompt , apiKey)
 }
 fun findMostSimilarMessage(newMessageVector: List<Float>, indexedHistory: Map<AiMessage, List<Float>>): Pair<AiMessage, Float>? {
     var bestMatch: AiMessage? = null
@@ -262,7 +258,7 @@ private fun createPrompt(type: String, context: List<AiMessage>, recent: List<Ai
     """.trimIndent()
 }
 
-private fun getAiChatResponse(prompt: String): List<String> {
+private fun getAiChatResponse(prompt: String,apiKey: String) : List<String> {
     val client = OkHttpClient.Builder()
         .readTimeout(60, TimeUnit.SECONDS)
         .connectTimeout(60, TimeUnit.SECONDS)
