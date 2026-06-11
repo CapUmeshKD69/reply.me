@@ -13,7 +13,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 import android.content.Intent
-import com.example.smartreply.R
+import me.reply.app.R
 @Singleton
 class NotificationHelper @Inject constructor(
     @ApplicationContext private val context: Context

@@ -7,10 +7,10 @@ plugins {
 }
 
 android {
-    namespace = "com.example.smartreply"
+    namespace = "me.reply.app"
     compileSdk = 34
     defaultConfig {
-        applicationId = "com.example.smartreply"
+        applicationId = "me.reply.app"
         minSdk = 26
         targetSdk = 34
         versionCode = 1
