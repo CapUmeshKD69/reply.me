@@ -32,7 +32,7 @@ data class EmbeddingResponse(val embedding: Embedding)
 
 @Serializable
 data class EmbeddingRequest(
-    val model: String = "models/text-embedding-001",
+    val model: String,
     val content: Content
 )
 

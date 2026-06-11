@@ -12,7 +12,7 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import kotlin.math.sqrt
 private const val GOOGLE_API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
-private const val CHAT_MODEL = "gemini-2.5-pro"
+private const val CHAT_MODEL = "gemini-2.5-flash"
 
 fun parseChatFile(fileContent: String): List<AiMessage> {
     val messages = mutableListOf<AiMessage>()
@@ -53,54 +53,76 @@ private fun sanitizeTextForApi(text: String): String {
     return sanitized
 }
 fun getEmbeddingsInBatch(texts: List<String>, apiKey: String): Map<String, List<Float>>? {
-    val client = OkHttpClient()
-    val jsonParser = Json { ignoreUnknownKeys = true }
-    val url = "https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:batchEmbedContents?key=$apiKey"
-
+    val embeddingModel = "gemini-embedding-001"
+    val result = mutableMapOf<String, List<Float>>()
+    
+    Log.d("AI_ENGINE", "  -> getEmbeddingsInBatch: Received ${texts.size} texts")
+    
     val textAndSanitizedPairs = texts.map { originalText ->
         originalText to sanitizeTextForApi(originalText)
     }
-
+    
     val validPairs = textAndSanitizedPairs.filter { it.second.isNotBlank() }
-
-    // ADD DEBUG HERE
-    Log.d("AI_ENGINE", "  -> getEmbeddingsInBatch: Received ${texts.size} texts")
     Log.d("AI_ENGINE", "  -> After sanitization check: ${validPairs.size} valid texts")
-
+    
     if (validPairs.isEmpty()) {
         Log.d("AI_ENGINE", "  -> No valid texts to embed")
         return emptyMap()
     }
 
-    val requests = validPairs.map { (original, sanitized) ->
-        EmbeddingRequest(
-            model = "models/text-embedding-004",
-            content = Content(parts = listOf(Part(text = sanitized)))
-        )
+    for ((original, sanitized) in validPairs) {
+        val embedding = getEmbeddingInternal(sanitized, apiKey, embeddingModel)
+        if (embedding != null) {
+            result[original] = embedding
+        } else {
+            Log.w("AI_ENGINE", "  -> Failed to embed text: ${sanitized.take(30)}...")
+        }
+        // Add 100ms delay between requests to avoid rate limiting
+        Thread.sleep(100)
     }
+    
+    if (result.isEmpty()) {
+        Log.e("AI_ENGINE", "❌ ERROR: No embeddings could be generated from batch")
+        return null
+    }
+    
+    Log.d("AI_ENGINE", "  -> ✅ Batch embedding successful, got ${result.size}/${validPairs.size} embeddings")
+    return result
+}
 
-    val batchRequest = BatchEmbeddingRequest(requests = requests)
-    val requestBodyJson = jsonParser.encodeToString(batchRequest)
-
-    Log.d("AI_ENGINE", "  -> Sending ${requests.size} requests to embedding API")
-
-    val request = Request.Builder().url(url).post(requestBodyJson.toRequestBody("application/json".toMediaType())).build()
+private fun getEmbeddingInternal(text: String, apiKey: String, model: String): List<Float>? {
+    val client = OkHttpClient.Builder()
+        .readTimeout(60, TimeUnit.SECONDS)
+        .connectTimeout(60, TimeUnit.SECONDS)
+        .build()
+    val jsonParser = Json { ignoreUnknownKeys = true }
+    val url = "$GOOGLE_API_BASE_URL/models/${model}:embedContent?key=$apiKey"
+    
+    val requestObject = EmbeddingRequest(
+        model = "models/$model",
+        content = Content(parts = listOf(Part(text = text)))
+    )
+    val requestBodyJson = jsonParser.encodeToString(requestObject)
+    
+    val request = Request.Builder()
+        .url(url)
+        .post(requestBodyJson.toRequestBody("application/json".toMediaType()))
+        .build()
     try {
         val response = client.newCall(request).execute()
         val responseBodyString = response.body?.string()
-        if (response.isSuccessful && responseBodyString != null) {
-            val batchResponse = jsonParser.decodeFromString<BatchEmbeddingResponse>(responseBodyString)
-            Log.d("AI_ENGINE", "  -> ✅ Batch embedding successful, got ${batchResponse.embeddings.size} embeddings")
 
-            val validOriginalTexts = validPairs.map { it.first }
-            return validOriginalTexts.zip(batchResponse.embeddings.map { it.values }).toMap()
+        if (response.isSuccessful && responseBodyString != null) {
+            return jsonParser.decodeFromString<EmbeddingResponse>(responseBodyString).embedding.values
+        } else if (response.code == 429) {
+            Log.e("AI_ENGINE", "⚠️ Rate limit hit (429)! Quota exceeded. Please wait or upgrade to paid plan.")
+            return null
         } else {
-            Log.d("AI_ENGINE", "❌ Batch Embedding request failed! Code: ${response.code}")
-            Log.d("AI_ENGINE", "   -> Response Body: $responseBodyString")
+            Log.e("AI_ENGINE", "❌ Embedding failed! Code: ${response.code}")
+            Log.e("AI_ENGINE", "   -> Response: $responseBodyString")
         }
     } catch (e: Exception) {
-        Log.d("AI_ENGINE", "❌ An exception occurred during batch embedding: ${e.message}")
-        e.printStackTrace()
+        Log.e("AI_ENGINE", "❌ CRITICAL: Exception during embedding: ${e.message}", e)
     }
     return null
 }
@@ -126,40 +148,7 @@ fun getEmbedding(text: String, apiKey: String): List<Float>? {
         Log.e("AI_ENGINE", "❌ getEmbedding: Text became blank after sanitization")
         return null
     }
-    val client = OkHttpClient.Builder()
-        .readTimeout(60, TimeUnit.SECONDS)
-        .connectTimeout(60, TimeUnit.SECONDS)
-        .build()
-    val jsonParser = Json { ignoreUnknownKeys = true }
-    val url = "$GOOGLE_API_BASE_URL/models/text-embedding-004:embedContent?key=$apiKey"
-    Log.d("AI_ENGINE", "  -> Single embedding request for: '${sanitizedText.take(50)}...'")
-    val requestObject = EmbeddingRequest(
-        model = "models/text-embedding-004",
-        content = Content(parts = listOf(Part(text = sanitizedText)))
-    )
-    val requestBodyJson = jsonParser.encodeToString(requestObject)
-    Log.d("AI_ENGINE", "  -> Request JSON: $requestBodyJson")
-    val request = Request.Builder()
-        .url(url)
-        .post(requestBodyJson.toRequestBody("application/json".toMediaType()))
-        .build()
-    try {
-        val response = client.newCall(request).execute()
-        val responseBodyString = response.body?.string()
-
-        Log.d("AI_ENGINE", "  -> Response Code: ${response.code}")
-
-        if (response.isSuccessful && responseBodyString != null) {
-            Log.d("AI_ENGINE", "  -> ✅ Single embedding successful!")
-            return jsonParser.decodeFromString<EmbeddingResponse>(responseBodyString).embedding.values
-        } else {
-            Log.e("AI_ENGINE", "❌ Single embedding failed! Code: ${response.code}")
-            Log.e("AI_ENGINE", "   -> Response: $responseBodyString")
-        }
-    } catch (e: Exception) {
-        Log.e("AI_ENGINE", "❌ Exception in single embedding: ${e.message}")
-    }
-    return null
+    return getEmbeddingInternal(sanitizedText, apiKey, "gemini-embedding-001")
 }
 fun generateSmartReplies(
     newMessage: AiMessage,
@@ -270,16 +259,28 @@ private fun getAiChatResponse(prompt: String,apiKey: String) : List<String> {
     Log.d("AI_ENGINE", "--- PROMPT SENT TO GEMINI ---\n$prompt\n---------------------------")
     val request = Request.Builder().url(url).post(requestBodyJson.toRequestBody("application/json".toMediaType())).build()
     try {
-        val response = client.newCall(request).execute()
-        val responseBodyString = response.body?.string()
+        val firstResponse = client.newCall(request).execute()
+        val firstBody = firstResponse.body?.string()
+        var response = firstResponse
+        var responseBodyString = firstBody
+
+        if (response.code == 429) {
+            Log.e("AI_ENGINE", "⚠️ Chat rate-limited (429). Retrying once after backoff.")
+            Thread.sleep(2500)
+            response.close()
+            val retryResponse = client.newCall(request).execute()
+            response = retryResponse
+            responseBodyString = retryResponse.body?.string()
+        }
+
         if (response.isSuccessful && responseBodyString != null) {
             val candidates = jsonParser.decodeFromString<GeminiResponse>(responseBodyString).candidates
             if (candidates.isNotEmpty() && candidates.first().content.parts.isNotEmpty()) {
                 var aiText = candidates.first().content.parts.first().text ?: ""
-               if (aiText.contains("json")) {
+                if (aiText.contains("json")) {
                     aiText = aiText.substringAfter("json\n").substringBeforeLast("\n")
-                } else if (aiText.contains("")) {
-                    aiText = aiText.substringAfter("").substringBeforeLast("")
+                } else if (aiText.contains("```")) {
+                    aiText = aiText.substringAfter("```").substringBeforeLast("```")
                 }
                 return try {
                     jsonParser.decodeFromString<List<String>>(aiText.trim())
@@ -288,11 +289,12 @@ private fun getAiChatResponse(prompt: String,apiKey: String) : List<String> {
                     extractRepliesManually(aiText)
                 }
             }
-        }else {
-            Log.d("AI_ENGINE", "❌ Chat request failed! ${response.code}")
+        } else {
+            Log.e("AI_ENGINE", "❌ Chat request failed! ${response.code}")
+            Log.e("AI_ENGINE", "   -> Response: $responseBodyString")
         }
     } catch (e: Exception) {
-        Log.d("AI_ENGINE", "❌ An exception occurred during chat response: ${e.message}")
+        Log.e("AI_ENGINE", "❌ Exception during chat response: ${e.message}", e)
     }
     return listOf("Okay 👍", "Sounds good!", "Let me check")
 }

@@ -170,7 +170,7 @@ fun SettingsScreen(
                     viewModel.saveApiKey(apiKeyText)
                     onApiKeySaved()
                 },
-                enabled = apiKeyText.isNotBlank() && apiKeyText.startsWith("AIzaSy")
+                enabled = apiKeyText.isNotBlank() && (apiKeyText.startsWith("AIzaSy") || apiKeyText.startsWith("AQ."))
             ) {
                 Text("Save and Continue")
             }

@@ -34,7 +34,12 @@ class SmartReplyNotificationListener : NotificationListenerService() {
         if (sbn == null || sbn.packageName != "com.whatsapp") return
         val extras = sbn.notification.extras
         val title = extras.getString("android.title") ?: ""
-        val text = extras.getString("android.text") ?: ""
+        val textObj = extras.get("android.text")
+        val text = when (textObj) {
+            is String -> textObj
+            is android.text.Spanned -> textObj.toString()
+            else -> ""
+        }
         Log.d("NotificationListener", "DEBUG: Received raw text = '[$text]'")
         val currentKey = "$title|$text"
         if (currentKey == lastProcessedKey) {
