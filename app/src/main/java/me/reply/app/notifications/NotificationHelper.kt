@@ -22,7 +22,6 @@ class NotificationHelper @Inject constructor(
         context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
     private val channelId = "smart_reply_channel"
-    private val notificationId = 1001
     private val TAG = "NotificationHelper"
 
     init {
@@ -52,8 +51,11 @@ class NotificationHelper @Inject constructor(
         originalNotification: Notification,
         ourUserName: String
     ) {
+        // Each contact gets its own notification ID so two simultaneous messages
+        // from different people don't overwrite each other.
+        val notificationId = contactName.hashCode()
         Log.d(TAG, "showSmartReplyNotification called")
-        Log.d(TAG, "Contact: $contactName, Message: $messageText")
+        Log.d(TAG, "Contact: $contactName, Message: $messageText, NotifId: $notificationId")
         Log.d(TAG, "Available replies: $replies")
 
         val replyAction = findWhatsAppReplyAction(originalNotification)

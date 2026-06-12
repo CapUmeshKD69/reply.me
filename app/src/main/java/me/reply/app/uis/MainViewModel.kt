@@ -5,13 +5,15 @@ import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import me.reply.app.ai.AiCallResult
 import me.reply.app.ai.AiMessage
 import me.reply.app.ai.getEmbedding
 import me.reply.app.ai.getEmbeddingsInBatch
 import me.reply.app.ai.parseChatFile
+import me.reply.app.data.ApiKeyRepository
+import me.reply.app.data.ContactProfileRepository
 import me.reply.app.data.Message
 import me.reply.app.data.MessageRepository
-import me.reply.app.data.UserSettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,10 +26,13 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import javax.inject.Inject
 
+private val HARDCODED_FALLBACK = listOf("Okay 👍", "Sounds good!", "Let me check")
+
 @HiltViewModel
 class MainViewModel @Inject constructor(
     private val repository: MessageRepository,
-    private val userSettings: UserSettingsRepository
+    private val apiKeyRepository: ApiKeyRepository,
+    val contactProfileRepository: ContactProfileRepository
 ) : ViewModel() {
 
     val contacts: StateFlow<List<String>> = repository.getImportedContacts()
@@ -48,15 +53,16 @@ class MainViewModel @Inject constructor(
             _selectedChatHistory.value = repository.getAllMessagesForContact(contactName)
         }
     }
+
     fun clearChatHistory() {
         _selectedChatHistory.value = emptyList()
     }
+
     fun processAndIndexFiles(uriMap: Map<Uri, String>, context: Context) {
         viewModelScope.launch(Dispatchers.IO) {
-
-            val apiKey = userSettings.getApiKey()
+            val apiKey = apiKeyRepository.getActiveKey()
             if (apiKey == null) {
-                Log.e("ViewModel", "API Key is missing. Cannot start indexing.")
+                Log.e("ViewModel", "No active API key. Cannot start indexing.")
                 return@launch
             }
             uriMap.forEach { (uri, fileName) ->
@@ -81,22 +87,15 @@ class MainViewModel @Inject constructor(
                             return@forEach
                         }
 
-                        // set the limit for file size to save in dataset
                         val messageLimit = 2000
-
                         val finalMessages = if (filteredMessages.size > messageLimit) {
-                            Log.d(
-                                "ViewModel",
-                                "Chat file is large (${filteredMessages.size} messages). Taking the latest $messageLimit."
-                            )
+                            Log.d("ViewModel", "Large file (${filteredMessages.size}). Taking last $messageLimit.")
                             filteredMessages.takeLast(messageLimit)
                         } else {
                             filteredMessages
                         }
                         val contactName = extractContactName(fileName)
-
-                        val ourUserName =
-                            detectUserNameFromParsedMessages(finalMessages, contactName)
+                        val ourUserName = detectUserNameFromParsedMessages(finalMessages, contactName)
                         storeUserMapping(context, contactName, ourUserName)
 
                         val messagesToSave = finalMessages.map { aiMsg ->
@@ -107,12 +106,8 @@ class MainViewModel @Inject constructor(
                                 embeddingJson = ""
                             )
                         }
-
                         val savedMessages = repository.insertAndGetMessages(messagesToSave)
-                        Log.d(
-                            "ViewModel",
-                            "Parsed and saved ${savedMessages.size} messages for $contactName (User: $ourUserName)"
-                        )
+                        Log.d("ViewModel", "Saved ${savedMessages.size} messages for $contactName")
 
                         runIndexingProcess(savedMessages, apiKey)
                     }
@@ -124,14 +119,13 @@ class MainViewModel @Inject constructor(
             Log.d("ViewModel", "Finished processing all files.")
         }
     }
+
     private fun detectUserNameFromParsedMessages(
         messages: List<AiMessage>,
         contactName: String
     ): String {
         if (messages.isEmpty()) return "Me"
-
         val senderStats = messages.groupingBy { it.sender }.eachCount()
-
         val potentialUsers = senderStats.filterKeys {
             !it.equals(contactName, ignoreCase = true) &&
                     !it.contains("WhatsApp", ignoreCase = true) &&
@@ -147,49 +141,65 @@ class MainViewModel @Inject constructor(
         prefs.edit().putString(contactName, ourUserName).apply()
     }
 
-    private suspend fun runIndexingProcess(messagesToIndex: List<Message>, apiKey: String) {
-        Log.d("ViewModel", "Starting indexing process for ${messagesToIndex.size} messages...")
-
+    private suspend fun runIndexingProcess(messagesToIndex: List<Message>, initialApiKey: String) {
+        Log.d("ViewModel", "Starting indexing for ${messagesToIndex.size} messages...")
+        var currentApiKey = initialApiKey
         val chunks = messagesToIndex.chunked(80)
 
-        chunks.forEachIndexed { index, messageChunk ->
+        chunks.forEachIndexed { index, chunk ->
             _indexingProgress.value = (index + 1) to chunks.size
-            val textsToEmbed = messageChunk.map { it.messageText }
-            val embeddingsMap = getEmbeddingsInBatch(textsToEmbed, apiKey)
-            if (embeddingsMap != null) {
-                val updatedMessages = messageChunk.mapNotNull { message ->
-                    embeddingsMap[message.messageText]?.let { vector ->
-                        message.copy(embeddingJson = Json.encodeToString(vector))
-                    }
+            val textsToEmbed = chunk.map { it.messageText }
+
+            // Attempt batch embedding with key-rotation on fault
+            val (embeddingsMap, keyFaultCode) = getEmbeddingsInBatch(textsToEmbed, currentApiKey)
+
+            if (keyFaultCode != null) {
+                // Current key hit a fault — report and rotate
+                apiKeyRepository.reportKeyError(currentApiKey, keyFaultCode)
+                val nextKey = apiKeyRepository.rotateToNextActiveKey()
+                if (nextKey == null) {
+                    Log.e("ViewModel", "All API keys exhausted during indexing. Stopping.")
+                    return
                 }
-                if (updatedMessages.isNotEmpty()) {
-                    repository.updateMessages(updatedMessages)
-                    Log.d(
-                        "ViewModel",
-                        "Indexed chunk ${index + 1}/${chunks.size} (${updatedMessages.size} messages)"
-                    )
+                currentApiKey = nextKey
+                Log.d("ViewModel", "Rotated key. Retrying chunk ${index + 1} with new key.")
+                // Retry chunk once with new key
+                val (retryMap, _) = getEmbeddingsInBatch(textsToEmbed, currentApiKey)
+                if (retryMap != null) {
+                    saveEmbeddings(chunk, retryMap)
+                } else {
+                    Log.e("ViewModel", "Chunk ${index + 1} failed after key rotation. Skipping.")
                 }
+            } else if (embeddingsMap != null) {
+                saveEmbeddings(chunk, embeddingsMap)
+                Log.d("ViewModel", "Indexed chunk ${index + 1}/${chunks.size}")
             } else {
-                Log.e("ViewModel", "Failed to get embeddings for chunk ${index + 1}")
-                trySingleEmbeddingFallback(messageChunk, apiKey)
+                Log.e("ViewModel", "Non-key failure for chunk ${index + 1}. Trying single fallback.")
+                trySingleEmbeddingFallback(chunk, currentApiKey)
             }
         }
     }
 
-    private suspend fun trySingleEmbeddingFallback(messages: List<Message>, apiKey: String) {
-        Log.d("ViewModel", "  -> Trying single embedding fallback for ${messages.size} messages...")
-        val updatedMessages = mutableListOf<Message>()
-        messages.forEach { message ->
-            val embedding = getEmbedding(message.messageText, apiKey)
-            if (embedding != null) {
-                updatedMessages.add(message.copy(embeddingJson = Json.encodeToString(embedding)))
+    private suspend fun saveEmbeddings(messages: List<Message>, embeddingsMap: Map<String, List<Float>>) {
+        val updated = messages.mapNotNull { msg ->
+            embeddingsMap[msg.messageText]?.let { vec ->
+                msg.copy(embeddingJson = Json.encodeToString(vec))
             }
-            // Small delay to avoid rate limiting
+        }
+        if (updated.isNotEmpty()) repository.updateMessages(updated)
+    }
+
+    private suspend fun trySingleEmbeddingFallback(messages: List<Message>, apiKey: String) {
+        Log.d("ViewModel", "  -> Single embedding fallback for ${messages.size} messages...")
+        val updated = mutableListOf<Message>()
+        messages.forEach { msg ->
+            val (vec, _) = getEmbedding(msg.messageText, apiKey)
+            if (vec != null) updated.add(msg.copy(embeddingJson = Json.encodeToString(vec)))
             kotlinx.coroutines.delay(200)
         }
-        if (updatedMessages.isNotEmpty()) {
-            repository.updateMessages(updatedMessages)
-            Log.d("ViewModel", "✅ Single embedding fallback saved ${updatedMessages.size} messages")
+        if (updated.isNotEmpty()) {
+            repository.updateMessages(updated)
+            Log.d("ViewModel", "  -> Single fallback saved ${updated.size} messages")
         }
     }
 
@@ -202,7 +212,7 @@ class MainViewModel @Inject constructor(
     fun deleteContact(contactName: String) {
         viewModelScope.launch(Dispatchers.IO) {
             repository.deleteContactHistory(contactName)
-            Log.d("ViewModel", "Deleted all messages for contact: $contactName")
+            Log.d("ViewModel", "Deleted all messages for: $contactName")
         }
     }
 }
